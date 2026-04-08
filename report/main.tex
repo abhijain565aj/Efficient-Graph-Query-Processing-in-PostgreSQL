@@ -1,0 +1,81 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{float}
+\title{Efficient Graph Query Processing in PostgreSQL using Recursive SQL and Indexing}
+\author{Sameer Patil \and Abhi Jain \and Jatsya Jariwala \and Harsh Suthar}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+Graph-structured data appears naturally in domains such as social networks, recommendation systems, and contact tracing. Although graph databases are purpose-built for such data, many real-world systems continue to rely on relational engines such as PostgreSQL. In this project, we study how core graph operations can be expressed efficiently inside PostgreSQL using recursive Common Table Expressions and indexing.
+
+\section{Objectives}
+The goals of the project are:
+\begin{itemize}
+    \item model graph-structured data using a normalized relational schema,
+    \item implement graph traversal using recursive SQL,
+    \item analyze execution plans using PostgreSQL's optimizer,
+    \item evaluate the effect of indexing and join strategies, and
+    \item demonstrate the ideas on realistic graph workloads.
+\end{itemize}
+
+\section{Schema Design}
+We use two tables:
+\begin{itemize}
+    \item \texttt{nodes(id, label, node\_type)}
+    \item \texttt{edges(src, dst, weight, interaction\_type)}
+\end{itemize}
+The \texttt{edges} table stores the adjacency-list representation of the graph.
+
+\section{Queries Implemented}
+We implemented the following query classes:
+\begin{itemize}
+    \item reachability from a source node,
+    \item bounded $k$-hop neighborhood,
+    \item BFS-style shortest-path approximation,
+    \item mutual friend detection,
+    \item friend recommendation using 2-hop traversal,
+    \item contact tracing over bounded depth.
+\end{itemize}
+
+\section{Experimental Setup}
+We generated synthetic graph datasets of three sizes: small, medium, and large. For every dataset, we ran the same query set under three indexing modes:
+\begin{enumerate}
+    \item no secondary indexes,
+    \item basic indexes on \texttt{edges(src)} and \texttt{edges(dst)},
+    \item composite indexes on \texttt{(src, dst)} and \texttt{(dst, src)}.
+\end{enumerate}
+For every run, we collected execution time, planning time, estimated cost, and execution plans using \texttt{EXPLAIN ANALYZE} with JSON output.
+
+\section{Results and Analysis}
+Insert the generated plots here. Typical observations to discuss:
+\begin{itemize}
+    \item forward traversal queries benefit strongly from indexes on \texttt{src},
+    \item self-join based queries such as mutual-friend detection benefit from indexing on both endpoints,
+    \item recursive queries become increasingly expensive as graph density and depth increase,
+    \item PostgreSQL can support moderate graph workloads effectively when the schema and indexes are chosen carefully.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{../results/plots/execution_time_small.png}
+    \caption{Execution time comparison on the small dataset. Replace with your generated figure if needed.}
+\end{figure}
+
+\section{Use Cases}
+\subsection{Social Network Analysis}
+Users are modeled as nodes and friendships/interactions as edges. We support reachability, mutual-friend detection, friend recommendation, and path exploration.
+
+\subsection{Disease Spread and Contact Tracing}
+Individuals are nodes and interactions are edges. Using recursive SQL, we can find all contacts within $k$ hops and trace possible chains of spread.
+
+\section{Conclusion}
+This project shows that graph query processing can be implemented effectively inside PostgreSQL using recursive SQL and appropriate indexing. While a relational engine may not replace a graph database for every workload, it offers a practical and efficient solution for many moderate-scale graph analytics tasks.
+
+\end{document}
