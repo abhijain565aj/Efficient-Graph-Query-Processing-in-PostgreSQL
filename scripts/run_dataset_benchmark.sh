@@ -58,22 +58,22 @@ case "$SIZE" in
   large)
     BENCH_USERS="${BENCH_USERS:-60}"
     K_VALUES=(1 2 3)
-    MODES=(approx cached)
-    SCENARIOS=(optimized)
+    MODES=(exact approx cached)
+    SCENARIOS=(composite optimized)
     DEGREE_CAP="${DEGREE_CAP:-20}"
     LIKES_PER_NEIGHBOR="${LIKES_PER_NEIGHBOR:-32}"
     CACHE_NEIGHBORS="${CACHE_NEIGHBORS:-250}"
-    echo "Large dataset selected: optimized scenario only; exact traversal is intentionally skipped."
+    # echo "Large dataset selected: optimized scenario only; exact traversal is intentionally skipped."
     ;;
   large_dense)
     BENCH_USERS="${BENCH_USERS:-40}"
     K_VALUES=(1 2 3)
-    MODES=(approx cached)
-    SCENARIOS=(optimized)
+    MODES=(exact approx cached)
+    SCENARIOS=(composite optimized)
     DEGREE_CAP="${DEGREE_CAP:-24}"
     LIKES_PER_NEIGHBOR="${LIKES_PER_NEIGHBOR:-40}"
     CACHE_NEIGHBORS="${CACHE_NEIGHBORS:-250}"
-    echo "Large dense selected: optimized scenario only; exact traversal is intentionally skipped."
+    # echo "Large dense selected: optimized scenario only; exact traversal is intentionally skipped."
     ;;
   *)
     echo "Unknown dataset size: $SIZE. Use small, medium, large, small_dense, medium_dense, or large_dense." >&2
