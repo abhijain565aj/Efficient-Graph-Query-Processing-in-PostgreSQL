@@ -1,19 +1,72 @@
 services:
   postgres:
     image: postgres:16
-    container_name: graph_pg_project
+    container_name: memegraph-postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: graphdb
+      POSTGRES_USER: memegraph
+      POSTGRES_PASSWORD: memegraph
+      POSTGRES_DB: memegraph
     ports:
-      - "5433:5432"
+      # Host port defaults to 55432 to avoid colliding with a local PostgreSQL on 5432.
+      # Container-internal port remains 5432.
+      - "${POSTGRES_HOST_PORT:-55432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
+    # Large GROUP BY / index-build jobs can hit Docker's tiny default /dev/shm.
+    shm_size: "${POSTGRES_SHM_SIZE:-2gb}"
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "work_mem=16MB"
+      - "-c"
+      - "maintenance_work_mem=512MB"
+      - "-c"
+      - "effective_cache_size=4GB"
+      - "-c"
+      - "track_io_timing=on"
+      - "-c"
+      - "max_parallel_workers_per_gather=0"
+      - "-c"
+      - "synchronous_commit=off"
+      - "-c"
+      - "checkpoint_timeout=30min"
+      - "-c"
+      - "max_wal_size=8GB"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d graphdb"]
+      test: ["CMD-SHELL", "pg_isready -U memegraph -d memegraph"]
       interval: 5s
       timeout: 5s
-      retries: 20
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: memegraph-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: memegraph
+      POSTGRES_USER: memegraph
+      POSTGRES_PASSWORD: memegraph
+      BACKEND_PORT: 4000
+      NODE_ENV: production
+    ports:
+      - "4000:4000"
+
+  frontend:
+    build: ./frontend
+    container_name: memegraph-frontend
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE: "http://localhost:4000"
+    ports:
+      - "5173:5173"
+
 volumes:
   pgdata:

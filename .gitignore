@@ -1,0 +1,13 @@
+.venv/
+node_modules/
+dist/
+.env
+.DS_Store
+__pycache__/
+*.pyc
+analysis_outputs/*.csv
+analysis_outputs/plans/*.jsonl
+analysis_outputs/plots/*.png
+data/generated/*
+!data/generated/.gitkeep
+*.zip

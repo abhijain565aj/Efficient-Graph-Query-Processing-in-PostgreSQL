@@ -1,3 +1,7 @@
-psycopg[binary]>=3.2
+numpy>=1.26
 pandas>=2.2
 matplotlib>=3.8
+psycopg[binary]>=3.1
+aiohttp>=3.9
+tqdm>=4.66
+python-dotenv>=1.0

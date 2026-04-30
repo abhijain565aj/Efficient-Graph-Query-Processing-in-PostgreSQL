@@ -1,0 +1,18 @@
+{
+  "name": "memegraph-frontend",
+  "version": "1.0.0",
+  "description": "React UI for MemeGraph benchmark/recommendation demo",
+  "private": true,
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {}
+}
