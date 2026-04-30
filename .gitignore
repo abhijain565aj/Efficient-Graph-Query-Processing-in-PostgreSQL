@@ -11,3 +11,4 @@ analysis_outputs/plots/*.png
 data/generated/*
 !data/generated/.gitkeep
 *.zip
+memegraph_postgres_project/

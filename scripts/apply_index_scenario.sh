@@ -21,5 +21,7 @@ DB_USER="${POSTGRES_USER:-memegraph}"
 export PGPASSWORD="${POSTGRES_PASSWORD:-memegraph}"
 export PGOPTIONS="${PGOPTIONS:--c client_min_messages=warning}"
 
-psql -q -P pager=off -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 \
-  -c "SELECT apply_index_scenario('$SCENARIO') AS index_scenario;"
+psql -qAt -P pager=off -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 \
+  -c "SELECT apply_index_scenario('$SCENARIO');" >/dev/null
+
+echo "Index scenario applied: $SCENARIO"

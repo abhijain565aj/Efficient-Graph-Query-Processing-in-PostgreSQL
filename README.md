@@ -42,6 +42,18 @@ export PAGER=cat
 psql -P pager=off ...
 ```
 
+
+### Quiet terminal + full log files
+
+Top-level scripts keep the terminal short and write detailed command output to `logs/*.log`.
+On failure, the script prints the last log lines automatically.
+
+```bash
+./setup.sh
+./run.sh medium_dense
+VERBOSE=1 ./run.sh medium_dense   # optional: show full live output
+```
+
 ### Data is reused by default
 
 `run.sh` generates data only when the required CSVs do not already exist.

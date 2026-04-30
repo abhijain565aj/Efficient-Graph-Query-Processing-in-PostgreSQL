@@ -38,13 +38,31 @@ CREATE TABLE IF NOT EXISTS account_liked_meme (
     PRIMARY KEY (account_id, meme_id)
 );
 
--- Multiple views of the same meme are allowed, hence viewed_at participates in the key.
+-- Event table for views. Multiple views of the same meme by the same user are valid.
+-- Use a surrogate event id instead of (account_id, meme_id, viewed_at) as the primary key.
+-- Dense synthetic workloads can legitimately produce repeated user/meme/timestamp rows.
 CREATE TABLE IF NOT EXISTS account_viewed_meme (
+    view_id    BIGSERIAL PRIMARY KEY,
     account_id BIGINT NOT NULL,
     meme_id    INTEGER NOT NULL,
-    viewed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (account_id, meme_id, viewed_at)
+    viewed_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Migration guard for older local DB volumes created by previous project ZIPs.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'account_viewed_meme'
+          AND column_name = 'view_id'
+    ) THEN
+        ALTER TABLE account_viewed_meme DROP CONSTRAINT IF EXISTS account_viewed_meme_pkey;
+        ALTER TABLE account_viewed_meme ADD COLUMN view_id BIGSERIAL;
+        ALTER TABLE account_viewed_meme ADD PRIMARY KEY (view_id);
+    END IF;
+END $$;
 
 -- Derived candidate statistics. Rebuilt after bulk load; safe to keep unlogged.
 CREATE UNLOGGED TABLE IF NOT EXISTS meme_daily_stats (

@@ -14,6 +14,11 @@
 ./run.sh medium_dense --reset  # regenerate data
 ```
 
+
+## Logging behavior
+
+Top-level runs are quiet by default. Detailed command output, COPY progress, npm/pip output, and benchmark progress bars are written to `logs/*.log`. If a command fails, the last 80 log lines are printed automatically. Use `VERBOSE=1 ./run.sh medium_dense` when you want live detailed output.
+
 ## Full run
 
 ```bash

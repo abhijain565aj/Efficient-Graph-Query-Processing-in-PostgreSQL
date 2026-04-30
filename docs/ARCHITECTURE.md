@@ -8,7 +8,7 @@ MemeGraph separates correctness, approximation, and serving speed.
 - `memes`: recommendable meme objects.
 - `account_account`: directed social edges.
 - `account_liked_meme`: meme likes.
-- `account_viewed_meme`: recent views used for filtering.
+- `account_viewed_meme`: recent view events used for filtering. It uses a surrogate `view_id` primary key because repeated views of the same meme by the same user are valid in dense workloads.
 
 ## Derived tables
 

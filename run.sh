@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Disable psql pager so scripts never pause at an (END) screen requiring q.
-export PSQL_PAGER=cat
-export PAGER=cat
-
 # Main runner.
 # Usage:
 #   ./run.sh small                 # generate only if missing, then load + benchmark
@@ -14,8 +10,10 @@ export PAGER=cat
 #   ./run.sh small --skip-generate # never generate; fail if data is missing
 #   ./run.sh medium --skip-benchmark
 #   ./run.sh medium --with-app     # also starts backend + frontend
+#   VERBOSE=1 ./run.sh medium      # show full command output live instead of only in logs
 
 cd "$(dirname "$0")"
+source scripts/common.sh
 
 SIZE="${1:-small}"
 shift || true
@@ -37,8 +35,11 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+log_info "MemeGraph run started. Full log: $LOG_FILE"
+
 if [[ ! -f .env ]]; then
   cp .env.example .env
+  log_info "Created .env from .env.example"
 fi
 
 if [[ -d .venv ]]; then
@@ -58,7 +59,6 @@ dataset_exists() {
     "account_liked_meme.csv"
     "account_viewed_meme.csv"
   )
-
   [[ -d "$dir" ]] || return 1
   for f in "${required[@]}"; do
     [[ -s "$dir/$f" ]] || return 1
@@ -78,12 +78,12 @@ normalize_size() {
 
 wait_for_postgres() {
   for i in {1..90}; do
-    if docker compose exec -T postgres pg_isready -U memegraph -d memegraph >/dev/null 2>&1; then
+    if docker compose exec -T postgres pg_isready -U memegraph -d memegraph >> "$LOG_FILE" 2>&1; then
       return 0
     fi
     sleep 1
   done
-  echo "PostgreSQL did not become ready in time." >&2
+  echo "PostgreSQL did not become ready in time. Full log: $LOG_FILE" >&2
   exit 1
 }
 
@@ -100,31 +100,27 @@ run_one_size() {
   local make_size="${size//_/-}"
   local data_dir="data/generated/$size"
 
-  echo ""
-  echo "============================================================"
-  echo " Running dataset: $size"
-  echo "============================================================"
+  log_info ""
+  log_info "============================================================"
+  log_info "Running dataset: $size"
+  log_info "============================================================"
 
-  echo "== Starting PostgreSQL =="
-  docker compose up -d postgres
+  run_logged "Starting PostgreSQL" docker compose up -d postgres
   wait_for_postgres
 
-  echo "== Initializing DB schema/functions/index helpers =="
-  ./scripts/init_db.sh
+  run_logged "Initializing DB schema/functions/index helpers" ./scripts/init_db.sh
 
   if [[ "$RESET_DATA" == "1" ]]; then
-    echo "== Reset requested: deleting generated $size dataset =="
+    log_info "Reset requested: deleting generated $size dataset"
     rm -rf "$data_dir"
   fi
 
   if [[ "$SKIP_GENERATE" == "1" ]]; then
-    echo "== Skipping generation for $size because --skip-generate was passed =="
+    log_info "Skipping generation for $size because --skip-generate was passed"
   elif dataset_exists "$data_dir"; then
-    echo "== Reusing existing $size dataset at $data_dir =="
-    echo "   Pass --reset to delete and regenerate it."
+    log_info "Reusing existing $size dataset at $data_dir. Pass --reset to regenerate."
   else
-    echo "== Generated data for $size not found/incomplete; generating now =="
-    make "generate-$make_size"
+    run_logged "Generating $size dataset" make -s "generate-$make_size"
   fi
 
   if ! dataset_exists "$data_dir"; then
@@ -133,14 +129,12 @@ run_one_size() {
     exit 1
   fi
 
-  echo "== Loading $size dataset =="
-  make "load-$make_size"
+  run_logged "Loading $size dataset into PostgreSQL" make -s "load-$make_size"
 
   if [[ "$SKIP_BENCHMARK" == "0" ]]; then
-    echo "== Benchmarking $size dataset =="
-    make "benchmark-$make_size"
+    run_logged "Benchmarking $size dataset" make -s "benchmark-$make_size"
   else
-    echo "== Skipping benchmark for $size =="
+    log_info "Skipping benchmark for $size"
   fi
 }
 
@@ -159,16 +153,15 @@ case "$SIZE" in
 esac
 
 if [[ "$WITH_BACKEND" == "1" ]]; then
-  echo "== Starting backend container =="
-  docker compose up -d backend
-  echo "Backend API: http://localhost:4000"
+  run_logged "Starting backend container" docker compose up -d backend
+  log_info "Backend API: http://localhost:4000"
   if [[ "$WITH_FRONTEND" == "1" ]]; then
-    echo "== Starting frontend container =="
-    docker compose up -d frontend
-    echo "Frontend UI: http://localhost:5173"
+    run_logged "Starting frontend container" docker compose up -d frontend
+    log_info "Frontend UI: http://localhost:5173"
   else
-    echo "Frontend dev UI: cd frontend && npm run dev"
+    log_info "Frontend dev UI: cd frontend && npm run dev"
   fi
 fi
 
-echo "Done. Results are under analysis_outputs/. Generated CSV data is under data/generated/ and is git-ignored."
+log_info "Done. Results are under analysis_outputs/. Generated CSV data is under data/generated/ and is git-ignored."
+log_info "Full run log: $LOG_FILE"

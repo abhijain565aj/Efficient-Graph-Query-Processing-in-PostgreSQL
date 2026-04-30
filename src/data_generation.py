@@ -93,7 +93,8 @@ def random_timestamp(rng: np.random.Generator, now: datetime, days: int) -> str:
     # Exponential recency: more interactions happen recently.
     age_days = min(days, rng.exponential(scale=days / 3.0))
     seconds = int(age_days * 86400 + rng.integers(0, 86400))
-    return (now - timedelta(seconds=seconds)).isoformat()
+    microseconds = int(rng.integers(0, 1_000_000))
+    return (now - timedelta(seconds=seconds, microseconds=microseconds)).isoformat()
 
 
 def batched_range(start: int, stop: int, batch: int) -> Iterable[Tuple[int, int]]:
