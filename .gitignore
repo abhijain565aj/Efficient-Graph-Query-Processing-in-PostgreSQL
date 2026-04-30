@@ -7,7 +7,8 @@ __pycache__/
 *.pyc
 analysis_outputs/*.csv
 analysis_outputs/plans/*.jsonl
-analysis_outputs/plots/*.png
+analysis_outputs/plots/*/*.png
+analysis_outputs/plots/*/*.csv
 data/generated/*
 !data/generated/.gitkeep
 *.zip
