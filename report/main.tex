@@ -185,6 +185,16 @@ There are also limitations. The data is synthetic and approximates social-networ
 \section{Conclusion}
 We built a PostgreSQL-based meme recommendation system over graph and interaction data. The project implements exact recursive SQL, bounded approximate traversal, optimized indexes and precomputed feed caching, along with benchmark scripts and a small web app. Experiments show that exact traversal is useful for correctness but becomes expensive on dense graphs; approximate mode gives a practical bounded online alternative; and cached serving provides the most stable low-latency path. The final system therefore demonstrates both database-level optimization through indexing and system-level optimization through approximation and precomputation.
 
+\section{AI Usage}
+The major areas of AI Usage in this project were:
+\begin{itemize}
+    \item We used ChatGPT to generate testbenches for testing out the indexes that we came up with. From these testbenches, we were able to identify which indexes were most effective for our queries.
+    \item We came up with some algorithms for meme recommendation systems, inspired by existing solutions. We used ChatGPT to help us write SQL queries for these algorithms, and to optimize them for performance in PostgreSQL.
+    \item For the frontend part, we used ChatGPT to prepare it to display all the metrics calulcated for various graph sizes and densities, with some interaction buttons to view various testing results. We also used it to help us write the backend code for the API endpoints that the frontend would call to get the data for display.
+
+\end{itemize}
+
+
 \begin{thebibliography}{9}
 \bibitem{postgres-recursive}
 PostgreSQL Documentation. \textit{WITH Queries and Recursive Queries}. \url{https://www.postgresql.org/docs/current/queries-with.html}.
