@@ -1,0 +1,197 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=0.72in]{geometry}
+\usepackage{graphicx}
+\graphicspath{{../analysis_outputs/plots/}}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{listings}
+\usepackage{array}
+
+\hypersetup{colorlinks=true, linkcolor=blue!60!black, urlcolor=blue!60!black}
+\setlist[itemize]{leftmargin=*, itemsep=2pt, topsep=2pt}
+\setlist[enumerate]{leftmargin=*, itemsep=2pt, topsep=2pt}
+\captionsetup{font=small}
+\sloppy
+
+\lstdefinestyle{sqlstyle}{
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{blue!60!black}\bfseries,
+    breaklines=true,
+    frame=single,
+    columns=fullflexible,
+    showstringspaces=false
+}
+\lstset{style=sqlstyle}
+
+\title{\textbf{Scalable Meme Recommendation using PostgreSQL Graph Queries, Approximation and Feed Caching}}
+\author{Sameer Patil (23b1035) \and Abhi Jain (23b0903) \and Jatsya Jariwala (23b0951) \and Harsh Suthar (23b1067)}
+\date{CS349 Project Report}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This project builds a PostgreSQL-backed social-media meme recommendation system. Users are connected through a directed social graph, and memes are recommended using likes from nearby accounts, recent-view filtering, freshness and global popularity. We implement three query modes: exact recursive $k$-hop traversal, bounded approximate traversal, and a precomputed feed-cache serving path. The backend and frontend are mainly used to visualize and compare these modes, while the core contribution is database/query optimization and benchmarking. Experiments across small, medium and million-user datasets show that exact recursive SQL is a useful baseline but becomes expensive on dense graphs; bounded approximation controls online work; and cached serving gives the most stable low-latency request path.
+\end{abstract}
+
+\section{Problem and System Overview}
+A social-media feed is naturally graph-based: a user often wants content liked by friends, friends-of-friends, or other nearby accounts. The naive solution is to compute all accounts within $k$ hops and then scan their liked memes. This is correct, but it becomes expensive quickly because a graph with average degree $d$ can expose up to $O(d^k)$ accounts before duplicate elimination. Our project studies how this workload can be handled inside PostgreSQL while still keeping the application realistic.
+
+The system has four parts. First, \texttt{src/data\_generation.py} creates synthetic Instagram/Facebook-like data at multiple sizes and densities. Second, PostgreSQL stores the social graph and interaction tables, with SQL functions for exact, approximate and cached feeds. Third, benchmark scripts load data, apply index scenarios, run latency tests and generate plots. Fourth, a Node.js/React app provides an interface where one user and hop count can be queried across all three modes side-by-side.
+
+\section{Schema and Data Generation}
+The base schema is relational but represents graph and event data. The main tables are:
+\begin{itemize}
+    \item \texttt{accounts(id, username, region\_id, created\_at)} for users.
+    \item \texttt{memes(id, title, category, creator\_id, quality\_score, created\_at)} for content.
+    \item \texttt{account\_account(src, dst, strength, created\_at)} for directed social edges.
+    \item \texttt{account\_liked\_meme(account\_id, meme\_id, liked\_at, weight)} for positive engagement.
+    \item \texttt{account\_viewed\_meme(view\_id, account\_id, meme\_id, viewed\_at)} for impressions/views. We use a surrogate \texttt{view\_id} because the same user can view the same meme multiple times.
+\end{itemize}
+
+Two derived tables are used for speed. \texttt{meme\_daily\_stats} stores global/recent popularity features, and \texttt{account\_feed\_cache} stores precomputed ranked feed rows. These derived tables can be regenerated, so they are suitable for cache-like usage.
+
+The generator supports six presets: \texttt{small}, \texttt{small\_dense}, \texttt{medium}, \texttt{medium\_dense}, \texttt{large}, and \texttt{large\_dense}. Dense variants keep the same number of users and memes but increase average degree and interaction volume. This is important because very sparse toy graphs fit in memory and do not expose the difference between exact traversal and approximate/cached serving.
+
+\begin{table}[H]
+\centering
+\caption{Data presets. Large presets have 1M users and 100k memes; dense variants stress the graph traversal and event tables.}
+\begin{tabular}{lrrrrr}
+\toprule
+Preset & Users & Memes & Avg. degree & Likes/user & Views/user \\
+\midrule
+small & 1,000 & 100 & 24 & 40 & 70 \\
+small\_dense & 1,000 & 100 & 48 & 75 & 120 \\
+medium & 10,000 & 1,000 & 48 & 70 & 130 \\
+medium\_dense & 10,000 & 1,000 & 96 & 120 & 220 \\
+large & 1,000,000 & 100,000 & 12 & 20 & 36 \\
+large\_dense & 1,000,000 & 100,000 & 18 & 32 & 60 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Feed Generation and Meme Scoring}
+For a user $u$, the feed pipeline is: find relevant accounts, collect memes liked by them, remove recently viewed memes, add a small exploration component, and rank candidates.
+
+\paragraph{Exact mode.} Exact mode computes the full $k$-hop neighborhood using recursive SQL. For each reachable account $v$, the query keeps the closest distance $d(u,v)$. Memes liked by closer accounts are weighted more strongly. This mode is useful as a correctness baseline but is not intended to be the fastest online path.
+
+\paragraph{Approximate mode.} Approximate mode keeps the same semantics but bounds the work. During expansion, it keeps only the strongest outgoing edges per node. During candidate extraction, it fetches only the most recent liked memes per neighbor. This changes the cost from ``all reachable users times all their likes'' to roughly:
+\[
+O(\text{bounded neighbors} \times \text{likes per neighbor cap}).
+\]
+This is the main online approximation used in the project.
+
+\paragraph{Cached mode.} Cached mode precomputes the ranked feed into \texttt{account\_feed\_cache}. Online serving then becomes a simple indexed lookup by \texttt{user\_id}, cache key and rank. The cache build time is intentionally not mixed into online latency plots; it represents an offline/nearline refresh job. A complete systems evaluation should report cache refresh cost separately, but the per-request cached latency measures only the serving path.
+
+The social part of the score is distance-weighted:
+\[
+S_{\mathrm{social}}(u,m) = \sum_{v \in N_k(u),\; v\text{ liked }m} \frac{w(v,m)}{d(u,v)}.
+\]
+The final score combines social signal, recent popularity, global popularity, meme quality and freshness:
+\[
+S(u,m)=\alpha S_{\mathrm{social}}+\beta S_{\mathrm{recent}}+\gamma S_{\mathrm{global}}+\delta S_{\mathrm{quality}}+\eta S_{\mathrm{freshness}}.
+\]
+Social score counts weighted likes from nearby users, recency score discounts old likes, global score captures overall meme popularity, quality score approximates engagement using like/view ratio, and freshness score favours recently created memes.\\
+A \texttt{NOT EXISTS} anti-join removes memes viewed by the same user in the recent window:
+\begin{lstlisting}[language=SQL]
+WHERE NOT EXISTS (
+  SELECT 1 FROM account_viewed_meme v
+  WHERE v.account_id = p_user_id
+    AND v.meme_id = candidate.meme_id
+    AND v.viewed_at >= now() - interval '30 days'
+)
+\end{lstlisting}
+A small exploration fraction is filled from globally trending memes so that the feed is not only restricted to the user's graph neighborhood.
+
+\section{Indexing Strategy}
+Indexing is designed around actual query access patterns instead of adding indexes blindly. The most important indexes are summarized below.
+
+\begin{table}[H]
+\centering
+\caption{Main optimized indexes and why they are used.}
+\begin{tabular}{p{0.36\linewidth}p{0.55\linewidth}}
+\toprule
+Index & Purpose \\
+\midrule
+\texttt{account\_account(src, strength DESC, dst)} & Expands a user's outgoing graph edges and supports approximate traversal by strongest connections. \\
+\texttt{account\_account(dst, src)} & Supports reverse lookups and analysis queries. \\
+\texttt{account\_liked\_meme(account\_id, liked\_at DESC) INCLUDE (meme\_id, weight)} & Quickly fetches recent likes for each neighbor; important for approximate mode. \\
+\texttt{account\_liked\_meme(meme\_id, liked\_at DESC)} & Supports meme-centric popularity and statistics refresh. \\
+\texttt{account\_viewed\_meme(account\_id, viewed\_at DESC, meme\_id)} & Makes the recent-view anti-join user-specific instead of scanning all views. \\
+\texttt{account\_feed\_cache(user\_id, cache\_key, rank\_index)} & Serves cached feeds in rank order using an indexed lookup. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The key idea is that the leading columns match the query predicates. For example, feed generation repeatedly asks ``given this account, find outgoing edges'', ``given this neighbor, find recent likes'', and ``given this user, has this meme been viewed recently?'' Composite indexes are therefore more useful than independent single-column indexes. The benchmark also includes no-extra-index, single-column, composite and optimized scenarios to show how access-path choice affects latency.
+
+\section{Benchmark Methodology and Results}
+Benchmarks are executed by the project scripts. The scripts generate or reuse data, load it using PostgreSQL \texttt{COPY}, rebuild indexes/statistics, optionally prime the feed cache, and then measure query latency over several users and hop counts. Normal \texttt{SELECT} execution is used for latency measurement; \texttt{EXPLAIN ANALYZE} samples are stored separately for plan inspection so that plan instrumentation does not dominate the timing.
+
+The most informative benchmark is \texttt{medium\_dense}: it is large enough to expose graph explosion while still being reproducible locally. On the optimized medium-dense run, exact traversal had mean latency around 261 ms, approximate mode around 11.5 ms, and cached serving around 0.46 ms. This validates the main design: indexes help, but the biggest gain comes from bounding and precomputing the expensive graph-ranking work.
+
+\begin{table}[H]
+\centering
+\caption{Representative optimized latency numbers in milliseconds.}
+\begin{tabular}{lrrrrrr}
+\toprule
+Dataset & \multicolumn{2}{c}{Exact} & \multicolumn{2}{c}{Approx.} & \multicolumn{2}{c}{Cached} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+ & mean & p95 & mean & p95 & mean & p95 \\
+\midrule
+medium & 49.74 & 142.02 & 6.51 & 15.30 & 0.43 & 0.59 \\
+medium\_dense & 261.12 & 740.90 & 11.46 & 29.68 & 0.46 & 0.61 \\
+large & 30.08 & 90.33 & 69.44 & 162.86 & 0.51 & 0.70 \\
+large\_dense & 161.60 & 612.11 & 92.46 & 183.74 & 0.57 & 1.03 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\linewidth]{medium_dense/latency_by_mode.png}
+\caption{Medium-dense latency by query mode. Exact recursive traversal is much slower than approximate and cached serving.}
+\label{fig:mediumdense-mode}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\linewidth]{medium_dense/latency_vs_k.png}
+\caption{Latency versus hop count on the medium-dense dataset. Exact mode is most sensitive to increasing $k$, while approximate and cached modes stay bounded.}
+\label{fig:mediumdense-k}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\linewidth]{large_dense/latency_by_mode.png}
+\caption{Large-dense benchmark. Cached serving remains stable because the online request only reads precomputed ranked rows.}
+\label{fig:largedense-mode}
+\end{figure}
+
+\section{Backend, Frontend and Discussion}
+The backend exposes endpoints for exact, approximate, cached and comparison feeds. The frontend is intentionally simple: the user chooses a user id, hop count and result limit, and the page shows the three modes together. This makes the system useful as a demo without exposing too many database parameters. Mode-specific parameters such as degree cap, likes-per-neighbor cap and cache size are shown near the relevant result cards.
+
+The main lesson is that indexing alone is not enough for a social feed workload. Composite indexes reduce the cost of graph expansion, recent-like lookup and recent-view filtering, but they cannot remove the combinatorial nature of exact $k$-hop traversal. The stronger optimization is architectural: use exact traversal as a baseline, use bounded approximation for online computation, and use feed caching for the primary low-latency serving path. This mirrors real recommendation-system practice, where offline or nearline jobs compute candidate pools and online services retrieve already-ranked results with light filtering.
+
+There are also limitations. The data is synthetic and approximates social-network behavior rather than reproducing a real Instagram or Facebook dataset. Cached latency excludes cache construction, which is appropriate for online serving but should be complemented by separate cache-refresh-cost plots in future work. Finally, since the data is synthetic, the project evaluates database performance rather than recommendation quality from real user feedback.
+
+\section{Conclusion}
+We built a PostgreSQL-based meme recommendation system over graph and interaction data. The project implements exact recursive SQL, bounded approximate traversal, optimized indexes and precomputed feed caching, along with benchmark scripts and a small web app. Experiments show that exact traversal is useful for correctness but becomes expensive on dense graphs; approximate mode gives a practical bounded online alternative; and cached serving provides the most stable low-latency path. The final system therefore demonstrates both database-level optimization through indexing and system-level optimization through approximation and precomputation.
+
+\begin{thebibliography}{9}
+\bibitem{postgres-recursive}
+PostgreSQL Documentation. \textit{WITH Queries and Recursive Queries}. \url{https://www.postgresql.org/docs/current/queries-with.html}.
+\bibitem{postgres-indexes}
+PostgreSQL Documentation. \textit{Indexes and Multicolumn Indexes}. \url{https://www.postgresql.org/docs/current/indexes.html}.
+\bibitem{postgres-copy}
+PostgreSQL Documentation. \textit{Populating a Database}. \url{https://www.postgresql.org/docs/current/populate.html}.
+\end{thebibliography}
+
+\end{document}
